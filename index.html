@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>StickSmash</title>
+<meta name="description" content="A hand-drawn stick-figure Smash-Bros-style local fighting game." />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+  <div id="stage-wrap">
+    <canvas id="game"></canvas>
+
+    <div id="menu-screen" class="screen">
+      <h1 class="title">STICKSMASH</h1>
+      <div class="subtitle">a hand-drawn stick-figure fighting game</div>
+
+      <div id="loading-wrap">
+        <div class="loading-bar-track"><div id="loading-fill" class="loading-bar-fill"></div></div>
+        <div class="hint">loading sketches&hellip;</div>
+      </div>
+
+      <div id="mode-row" class="mode-row hidden">
+        <button class="mode-btn" data-mode="2p">🧍 vs 🧍 &nbsp;2-Player Local</button>
+        <button class="mode-btn" data-mode="cpu">🧍 vs 🤖 &nbsp;1-Player vs CPU</button>
+      </div>
+
+      <div class="controls-panel">
+        <div class="col">
+          <h4 style="color:#2f6fed">Player 1</h4>
+          <div><strong>A / D</strong> move</div>
+          <div><strong>W</strong> jump (again = double jump)</div>
+          <div><strong>S</strong> fast-fall / drop through</div>
+          <div><strong>F</strong> punch/slice &nbsp; <strong>G</strong> kick/slice</div>
+          <div><strong>R</strong> fireball/tornado &nbsp; <strong>T</strong> spin uppercut*</div>
+          <div><strong>Y</strong> laser* (hold to charge, up to 2s)</div>
+        </div>
+        <div class="col">
+          <h4 style="color:#e6522c">Player 2</h4>
+          <div><strong>◀ / ▶</strong> move</div>
+          <div><strong>▲</strong> jump (again = double jump)</div>
+          <div><strong>▼</strong> fast-fall / drop through</div>
+          <div><strong>K</strong> punch/slice &nbsp; <strong>L</strong> kick/slice</div>
+          <div><strong>I</strong> fireball/tornado &nbsp; <strong>O</strong> spin uppercut*</div>
+          <div><strong>P</strong> laser* (hold to charge, up to 2s)</div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:-0.8em;">* what each button does depends on your fighter &mdash; pick one to see their moves</div>
+
+      <button id="start-btn" class="big-start">▶ START</button>
+      <div class="hint">3 stocks each &middot; rack up %, then knock them off the stage &middot; Enter/Space also continues</div>
+    </div>
+
+    <div id="charselect-screen" class="screen hidden">
+      <h1 class="title small-title">CHOOSE YOUR FIGHTER</h1>
+      <div class="subtitle">each fighter has their own moveset &mdash; check their card before you pick</div>
+      <div class="pick-columns">
+        <div class="pick-col">
+          <h3 style="color:#2f6fed">Player 1</h3>
+          <div id="p1-char-grid" class="char-grid"></div>
+        </div>
+        <div class="pick-col">
+          <h3 id="p2-pick-label" style="color:#e6522c">Player 2</h3>
+          <div id="p2-char-grid" class="char-grid"></div>
+        </div>
+      </div>
+      <div class="mode-row">
+        <button id="charselect-back-btn" class="mode-btn">◀ Back</button>
+        <button id="charselect-next-btn" class="big-start">NEXT ▶</button>
+      </div>
+    </div>
+
+    <div id="stageselect-screen" class="screen hidden">
+      <h1 class="title small-title">CHOOSE YOUR STAGE</h1>
+      <div id="stage-grid" class="stage-grid"></div>
+      <div class="mode-row">
+        <button id="stageselect-back-btn" class="mode-btn">◀ Back</button>
+        <button id="stageselect-fight-btn" class="big-start">⚔ FIGHT</button>
+      </div>
+    </div>
+
+    <div id="gameover-screen" class="screen hidden">
+      <h1 id="winner-title" class="title">K.O.!</h1>
+      <div id="winner-line" class="winner-line">&nbsp;</div>
+      <div class="mode-row">
+        <button id="rematch-btn" class="big-start">↻ REMATCH</button>
+        <button id="menu-btn" class="mode-btn">☰ Main Menu</button>
+      </div>
+      <div class="hint">R = rematch &middot; Esc = menu</div>
+    </div>
+
+    <div class="github-badge">stick figures, hand-drawn &middot; <a href="https://github.com/halleybearyoung-coder/StickSmash" target="_blank" rel="noopener">GitHub</a></div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
