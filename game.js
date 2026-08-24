@@ -1,3 +1,4 @@
+
 /* StickSmash — a Smash-Bros-style local stick-figure fighter
  * Built from hand-drawn stick-figure sprite sheets (walk / run / jump / punch / kick /
  * fireball / spinning uppercut). Single source of game logic; works both as a plain
@@ -6,12 +7,12 @@
  */
 (() => {
   "use strict";
-
+ 
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
   const CW = 960, CH = 540;
-
+ 
   const GRAVITY = 2000;
   const MAX_FALL = 980;
   const FASTFALL_BONUS = 620;
@@ -25,14 +26,14 @@
   const JUMP_V = -800;
   const DOUBLE_JUMP_V = -720;
   const MAX_JUMPS = 2;
-
+ 
   const STOCK_COUNT = 3;
   const RESPAWN_INVUL = 1.6;
   const LASER_MAX_CHARGE = 2.0;
-
+ 
   const ACTIONS = ["run", "jump", "kick", "walk", "punch", "fireball", "spin", "swordwalk", "slice", "airslice", "tornado"];
   const FRAME_COUNT = 5;
-
+ 
   const MOVES = {
     punch: {
       frames: ["punch_2", "punch_3", "punch_4"],
@@ -130,12 +131,12 @@
       sfx: "tornado",
     },
   };
-
+ 
   const KEYMAPS = {
     p1: { left: "KeyA", right: "KeyD", up: "KeyW", down: "KeyS", punch: "KeyF", kick: "KeyG", fireball: "KeyR", uppercut: "KeyT", laser: "KeyY" },
     p2: { left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown", punch: "KeyK", kick: "KeyL", fireball: "KeyI", uppercut: "KeyO", laser: "KeyP" },
   };
-
+ 
   // ---------------------------------------------------------------------
   // Characters — same hand-drawn stick-figure art, different accent color
   // and a handful of stat multipliers.
@@ -168,7 +169,7 @@
       },
     },
   ];
-
+ 
   // ---------------------------------------------------------------------
   // Stages — grounds[] are solid (never drop-through); platforms[] are
   // one-way. Multiple ground segments let a stage have a gap/pit.
@@ -218,37 +219,51 @@
       stars: true,
     },
   ];
-
+ 
   // ---------------------------------------------------------------------
   // Asset loading
   // ---------------------------------------------------------------------
-  function spriteSrc(action, i) {
+  function spriteSrcCandidates(action, i) {
     if (window.SPRITE_BASE64 && window.SPRITE_BASE64[action] && window.SPRITE_BASE64[action][i]) {
-      return window.SPRITE_BASE64[action][i];
+      return [window.SPRITE_BASE64[action][i]];
     }
-    return `assets/frames/${action}_${i}.png`;
+    // Try the organized assets/frames/ layout first, then fall back to the
+    // sprites sitting flat next to index.html — e.g. GitHub's web upload UI
+    // drops individually-added files flat unless a whole folder is dragged
+    // in, so a repo can easily end up without the assets/frames/ subfolder.
+    return [`assets/frames/${action}_${i}.png`, `${action}_${i}.png`];
   }
-
+ 
   const IMAGES = {}; // key "action_i" -> HTMLImageElement
   function loadAllSprites(onProgress) {
     return new Promise((resolve) => {
       const keys = [];
       ACTIONS.forEach((a) => { for (let i = 0; i < FRAME_COUNT; i++) keys.push(`${a}_${i}`); });
       let loaded = 0;
+      const markLoaded = () => {
+        loaded++;
+        onProgress(loaded / keys.length);
+        if (loaded === keys.length) resolve();
+      };
       keys.forEach((key) => {
         const [action, iStr] = key.split("_");
+        const srcs = spriteSrcCandidates(action, iStr);
         const img = new Image();
-        img.onload = img.onerror = () => {
-          loaded++;
-          onProgress(loaded / keys.length);
-          if (loaded === keys.length) resolve();
+        let attempt = 0;
+        img.onload = markLoaded;
+        img.onerror = () => {
+          if (attempt < srcs.length) {
+            img.src = srcs[attempt++];
+          } else {
+            markLoaded(); // every candidate failed — don't hang the loading bar
+          }
         };
-        img.src = spriteSrc(action, iStr);
+        img.src = srcs[attempt++];
         IMAGES[key] = img;
       });
     });
   }
-
+ 
   // ---------------------------------------------------------------------
   // Tiny procedural audio (no external files)
   // ---------------------------------------------------------------------
@@ -304,7 +319,7 @@
     start: () => { beep(440, 0.1, "square", 0.15, 660); },
     select: () => beep(500, 0.06, "square", 0.12, 640),
   };
-
+ 
   // ---------------------------------------------------------------------
   // Utility
   // ---------------------------------------------------------------------
@@ -316,7 +331,7 @@
   };
   const rand = (a, b) => a + Math.random() * (b - a);
   const rectsOverlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-
+ 
   // ---------------------------------------------------------------------
   // Player
   // ---------------------------------------------------------------------
@@ -334,7 +349,7 @@
       this.isCPU = isCPU;
       this.reset(true);
     }
-
+ 
     reset(fullReset, groundY) {
       this.x = this.spawnX;
       this.y = groundY != null ? groundY : this.y;
@@ -369,17 +384,17 @@
       this.aiTimer = 0;
       this.aiInput = { left: false, right: false, up: false, down: false, punch: false, kick: false, fireball: false, uppercut: false, laser: false };
     }
-
+ 
     get isBusy() {
       return !!this.attack || !!this.charging;
     }
-
+ 
     hurtbox() {
       const s = this.charDef.scaleMul;
       return { x: this.x - 34 * s, y: this.y - 196 * s, w: 68 * s, h: 196 * s };
     }
   }
-
+ 
   // ---------------------------------------------------------------------
   // Game
   // ---------------------------------------------------------------------
@@ -398,11 +413,11 @@
       this.lastTime = null;
       this.winner = null;
       this.stage = STAGES[0];
-
+ 
       this.pick = { p1: 0, p2: 0, stage: 0 };
-
+ 
       this.players = [];
-
+ 
       window.addEventListener("keydown", (e) => {
         if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(e.code)) e.preventDefault();
         this.keys.add(e.code);
@@ -411,33 +426,33 @@
         if (e.code === "Escape" && (this.state === "playing" || this.state === "gameover")) this.toMenu();
       });
       window.addEventListener("keyup", (e) => this.keys.delete(e.code));
-
+ 
       requestAnimationFrame((t) => this.loop(t));
     }
-
+ 
     onConfirm() {
       if (this.state === "menu") this.goCharSelect();
       else if (this.state === "charselect") this.goStageSelect();
       else if (this.state === "stageselect") this.startMatch();
       else if (this.state === "gameover") this.startMatch();
     }
-
+ 
     showScreen(id) {
       ["menu-screen", "charselect-screen", "stageselect-screen", "gameover-screen"].forEach((sid) => {
         document.getElementById(sid).classList.toggle("hidden", sid !== id);
       });
     }
-
+ 
     toMenu() {
       this.state = "menu";
       this.showScreen("menu-screen");
     }
-
+ 
     setMode(mode) {
       this.mode = mode;
       document.querySelectorAll(".mode-btn[data-mode]").forEach((b) => b.classList.toggle("selected", b.dataset.mode === mode));
     }
-
+ 
     goCharSelect() {
       ensureAudio();
       SFX.select();
@@ -447,12 +462,12 @@
       this.refreshCharSelection();
       this.showScreen("charselect-screen");
     }
-
+ 
     refreshCharSelection() {
       document.querySelectorAll("#p1-char-grid .char-card").forEach((el, i) => el.classList.toggle("selected", i === this.pick.p1));
       document.querySelectorAll("#p2-char-grid .char-card").forEach((el, i) => el.classList.toggle("selected", i === this.pick.p2));
     }
-
+ 
     goStageSelect() {
       ensureAudio();
       SFX.select();
@@ -460,16 +475,16 @@
       this.refreshStageSelection();
       this.showScreen("stageselect-screen");
     }
-
+ 
     refreshStageSelection() {
       document.querySelectorAll("#stage-grid .stage-card").forEach((el, i) => el.classList.toggle("selected", i === this.pick.stage));
     }
-
+ 
     startMatch() {
       ensureAudio();
       SFX.start();
       this.showScreen(null);
-
+ 
       this.stage = STAGES[this.pick.stage];
       let spawn1, spawn2;
       if (this.stage.spawn) {
@@ -479,10 +494,10 @@
         spawn1 = this.stage.stageL + w * 0.28;
         spawn2 = this.stage.stageL + w * 0.72;
       }
-
+ 
       const char1 = CHARACTERS[this.pick.p1] || CHARACTERS[0];
       const char2 = CHARACTERS[this.pick.p2] || CHARACTERS[0];
-
+ 
       const p1 = new Player("p1", char1, spawn1, KEYMAPS.p1, false, "P1", "#2f6fed");
       const p2Label = this.mode === "cpu" ? "CPU" : "P2";
       const p2Color = this.mode === "cpu" ? "#9b3fe6" : "#e6522c";
@@ -497,7 +512,7 @@
       this.state = "countdown";
       this.countdownT = 2.2;
     }
-
+ 
     endMatch(winner) {
       this.state = "gameover";
       this.winner = winner;
@@ -507,7 +522,7 @@
       document.getElementById("winner-title").style.textShadow =
         `4px 4px 0 ${winner ? winner.color : "#888"}`;
     }
-
+ 
     // -------------------------------------------------------------
     // Input helpers
     // -------------------------------------------------------------
@@ -526,7 +541,7 @@
         laser: this.keys.has(km.laser),
       };
     }
-
+ 
     // -------------------------------------------------------------
     // Simple CPU brain
     // -------------------------------------------------------------
@@ -538,11 +553,11 @@
         const dx = foe.x - cpu.x;
         const dist = Math.abs(dx);
         input.left = input.right = input.up = input.down = input.punch = input.kick = input.fireball = input.uppercut = false;
-
+ 
         const stageL = this.stage.stageL, stageR = this.stage.stageR;
         const nearLeftEdge = cpu.x < stageL + 50 && cpu.grounded;
         const nearRightEdge = cpu.x > stageR - 50 && cpu.grounded;
-
+ 
         // What this character's slots actually do — varies by moveMap, so the
         // AI shouldn't assume everyone has a ranged fireball or a recovery uppercut.
         const mm = cpu.charDef.moveMap || {};
@@ -550,7 +565,7 @@
         const heavyCloseMove = mm.fireball && mm.fireball !== "fireball" ? mm.fireball : null; // e.g. Lance's tornado
         const hasUppercut = mm.uppercut === "uppercut";
         const cd = (key) => cpu.cooldowns[key] || 0;
-
+ 
         if (!cpu.isBusy) {
           if (isRangedFireball && dist > 220 && cd("fireball") <= 0 && Math.random() < 0.22) {
             input.fireball = true;
@@ -580,7 +595,7 @@
         }
       }
     }
-
+ 
     // -------------------------------------------------------------
     // Physics + state update for one player
     // -------------------------------------------------------------
@@ -590,13 +605,13 @@
       const input = this.inputFor(p);
       const stage = this.stage;
       const cd = p.charDef;
-
+ 
       if (p.invul > 0) p.invul = Math.max(0, p.invul - dt);
       if (p.dropThroughTimer > 0) p.dropThroughTimer -= dt;
       for (const k in p.cooldowns) {
         if (p.cooldowns[k] > 0) p.cooldowns[k] -= dt;
       }
-
+ 
       if (p.attack) {
         // locked into attack animation; allow tiny drift only
         p.vx = approach(p.vx, 0, GROUND_FRICTION * dt);
@@ -616,7 +631,7 @@
         let targetSpeed = 0;
         if (wantLeft && !wantRight) { targetSpeed = -WALK_SPEED * cd.speedMul; p.facing = -1; }
         else if (wantRight && !wantLeft) { targetSpeed = WALK_SPEED * cd.speedMul; p.facing = 1; }
-
+ 
         if (targetSpeed !== 0) {
           p.runHoldTimer += dt;
           if (p.runHoldTimer > RUN_HOLD_TIME && p.grounded) {
@@ -625,7 +640,7 @@
         } else {
           p.runHoldTimer = 0;
         }
-
+ 
         const accel = p.grounded ? GROUND_ACCEL : AIR_ACCEL;
         const maxRun = RUN_SPEED * cd.speedMul;
         if (targetSpeed !== 0) {
@@ -634,7 +649,7 @@
           const fr = p.grounded ? GROUND_FRICTION : AIR_DRAG;
           p.vx = approach(p.vx, 0, fr * dt);
         }
-
+ 
         // ---- Jump ----
         if (input.up && !p._upHeldLast) {
           if (p.grounded || p.jumpsUsed < MAX_JUMPS) {
@@ -648,13 +663,13 @@
           }
         }
         p._upHeldLast = input.up;
-
+ 
         // ---- Drop through platform ----
         if (input.down && p.grounded && p.onPlatformIndex >= 0) {
           p.dropThroughTimer = 0.28;
           p.grounded = false;
         }
-
+ 
         // ---- Attacks & specials ----
         // Each input slot (punch/kick/fireball/uppercut/laser) is resolved through
         // the character's moveMap to an actual move key — a static string, a
@@ -666,7 +681,7 @@
         this.tryMove(p, "uppercut", input.uppercut) ||
         this.tryMove(p, "laser", input.laser);
       }
-
+ 
       // ---- Gravity ----
       if (!p.grounded) {
         let g = GRAVITY;
@@ -676,13 +691,13 @@
       } else {
         p.vy = 0;
       }
-
+ 
       // ---- Integrate ----
       const wasGrounded = p.grounded;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.walkDist += Math.abs(p.vx * dt);
-
+ 
       // ---- Ground / platform collision ----
       p.grounded = false;
       p.onPlatformIndex = -1;
@@ -709,23 +724,23 @@
         p.jumpsUsed = 0;
         if (!wasGrounded) { SFX.land(); p.squash = 1.35; this.spawnDust(p.x, p.y); }
       }
-
+ 
       // ---- Squash/stretch relax ----
       p.squash = approach(p.squash, 1, dt * 4);
-
+ 
       // ---- Attack progression ----
       if (p.attack) this.updateAttack(p, foe, dt);
-
+ 
       // ---- Animation state selection ----
       this.updateAnimation(p, dt);
-
+ 
       // ---- Blast zone check ----
       const b = stage.blast;
       if (p.x < b.l || p.x > b.r || p.y < b.t || p.y > b.b) {
         this.koPlayer(p);
       }
     }
-
+ 
     // Resolve an abstract input slot (punch/kick/fireball/uppercut/laser) to an
     // actual move key for this character, via their moveMap. Returns null if the
     // slot is disabled for this character.
@@ -735,7 +750,7 @@
       if (mapped == null) return null;
       return typeof mapped === "function" ? mapped(p) : mapped;
     }
-
+ 
     tryMove(p, slot, pressed) {
       if (!pressed) return false;
       const moveKey = this.resolveMoveKey(p, slot);
@@ -750,7 +765,7 @@
       }
       return false;
     }
-
+ 
     beginAttack(p, key) {
       const move = MOVES[key];
       p.attack = { key, move, stepIndex: 0, stepTimer: move.durs[0], hasHit: false };
@@ -765,12 +780,12 @@
       }
       SFX[move.sfx]();
     }
-
+ 
     updateAttack(p, foe, dt) {
       const a = p.attack;
       const move = a.move;
       a.stepTimer -= dt;
-
+ 
       if (move.multiHit) {
         // Ticks damage repeatedly for as long as the attack animation runs and
         // a foe stays inside the (typically surrounding/"aoe") hitbox — e.g.
@@ -801,7 +816,7 @@
           }
         }
       }
-
+ 
       if (a.stepTimer <= 0) {
         a.stepIndex++;
         if (a.stepIndex >= move.frames.length) {
@@ -816,7 +831,7 @@
         }
       }
     }
-
+ 
     // Shared knockback/damage application used by melee, projectiles, and the laser.
     dealHit(attacker, target, damageAmount, baseKB, scaleKB, angleDeg) {
       target.damage += damageAmount;
@@ -832,11 +847,11 @@
       SFX.hit();
       this.spawnHitSpark(target.x - dirX * 20, target.y - 120, attacker.color);
     }
-
+ 
     applyHit(attacker, target, move) {
       this.dealHit(attacker, target, move.damage * attacker.charDef.powerMul, move.baseKB, move.scaleKB, move.angleDeg);
     }
-
+ 
     spawnProjectile(p, move) {
       this.projectiles.push({
         x: p.x + p.facing * 26,
@@ -851,7 +866,7 @@
         trailTimer: 0,
       });
     }
-
+ 
     updateProjectiles(dt) {
       this.projectiles.forEach((pr) => {
         pr.t += dt;
@@ -874,7 +889,7 @@
       });
       this.projectiles = this.projectiles.filter((pr) => !pr.dead);
     }
-
+ 
     fireLaser(p, foe) {
       const frac = clamp(p.charging.t / LASER_MAX_CHARGE, 0, 1);
       const damage = 4 + frac * 20;
@@ -884,20 +899,20 @@
       const reach = 900;
       const bx1 = p.facing > 0 ? p.x + 10 : p.x - 10 - reach;
       const bx2 = p.facing > 0 ? p.x + 10 + reach : p.x - 10;
-
+ 
       if (!foe.dead && foe.invul <= 0) {
         const beamRect = { x: bx1, y: headY - beamHalfH, w: bx2 - bx1, h: beamHalfH * 2 };
         if (rectsOverlap(beamRect, foe.hurtbox())) {
           this.dealHit(p, foe, damage * p.charDef.powerMul, baseKB, 4.0, 18);
         }
       }
-
+ 
       this.laserFlash = { x1: bx1, x2: bx2, y: headY, color: p.color, t: 0, life: 0.18, thick: 6 + frac * 16 };
       SFX.laser(frac);
       p.charging = null;
       p.cooldowns.laser = 0.55;
     }
-
+ 
     koPlayer(p) {
       if (p.dead) return;
       SFX.ko();
@@ -913,7 +928,7 @@
         p.reset(false, this.stage.groundY);
       }
     }
-
+ 
     spawnDust(x, y) {
       for (let i = 0; i < 5; i++) {
         this.particles.push({ x: x + rand(-10, 10), y: y - rand(0, 6), vx: rand(-40, 40), vy: rand(-60, -10), life: 0.35, t: 0, color: "rgba(120,120,120,0.6)", r: rand(3, 6) });
@@ -936,13 +951,13 @@
       });
       this.particles = this.particles.filter((pt) => pt.t < pt.life);
     }
-
+ 
     // -------------------------------------------------------------
     // Animation frame selection
     // -------------------------------------------------------------
     updateAnimation(p, dt) {
       if (p.attack) return; // handled in updateAttack
-
+ 
       const cd = p.charDef;
       if (!p.grounded) {
         // jump/fall pose driven by vy
@@ -954,7 +969,7 @@
         p.state = "air";
         return;
       }
-
+ 
       const speed = Math.abs(p.vx);
       if (speed < 18) {
         // idle breathing: alternate frame 0 / 1 of the character's idle action
@@ -972,7 +987,7 @@
         p.frameIndex = Math.floor(p.walkDist / stride) % FRAME_COUNT;
       }
     }
-
+ 
     // -------------------------------------------------------------
     // Main loop
     // -------------------------------------------------------------
@@ -981,7 +996,7 @@
       let dt = (t - this.lastTime) / 1000;
       dt = Math.min(dt, 1 / 30);
       this.lastTime = t;
-
+ 
       if (this.state === "countdown") {
         this.countdownT -= dt;
         if (this.countdownT <= 0) this.state = "playing";
@@ -997,11 +1012,11 @@
         if (this.laserFlash.t >= this.laserFlash.life) this.laserFlash = null;
       }
       if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 3);
-
+ 
       this.render();
       requestAnimationFrame((tt) => this.loop(tt));
     }
-
+ 
     // -------------------------------------------------------------
     // Rendering
     // -------------------------------------------------------------
@@ -1009,17 +1024,17 @@
       const ctx = this.ctx;
       ctx.save();
       ctx.clearRect(0, 0, CW, CH);
-
+ 
       let shakeX = 0, shakeY = 0;
       if (this.shake > 0) {
         shakeX = rand(-1, 1) * this.shake * 8;
         shakeY = rand(-1, 1) * this.shake * 8;
       }
       ctx.translate(shakeX, shakeY);
-
+ 
       this.drawBackground(ctx, this.stage);
       this.drawStage(ctx, this.stage);
-
+ 
       if (this.players.length && (this.state === "countdown" || this.state === "playing" || this.state === "gameover")) {
         this.players.forEach((p) => this.drawShadow(ctx, p));
         [...this.players].sort((a, b) => a.y - b.y).forEach((p) => this.drawPlayer(ctx, p));
@@ -1029,12 +1044,12 @@
         this.drawLaserFlash(ctx);
         this.drawHUD(ctx);
       }
-
+ 
       if (this.state === "countdown") this.drawCountdown(ctx);
-
+ 
       ctx.restore();
     }
-
+ 
     drawBackground(ctx, stage) {
       const g = ctx.createLinearGradient(0, 0, 0, CH);
       g.addColorStop(0, stage.sky[0]);
@@ -1042,7 +1057,7 @@
       g.addColorStop(1, stage.sky[2]);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, CW, CH);
-
+ 
       if (stage.stars) {
         ctx.save();
         ctx.fillStyle = "rgba(255,255,255,0.8)";
@@ -1065,7 +1080,7 @@
           ctx.fill();
         });
       }
-
+ 
       ctx.strokeStyle = "rgba(28,28,28,0.08)";
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1073,7 +1088,7 @@
       ctx.lineTo(CW, stage.groundY + 60);
       ctx.stroke();
     }
-
+ 
     drawStage(ctx, stage) {
       stage.grounds.forEach((g) => {
         this.roundRectSketch(ctx, g.x1, g.y, g.x2 - g.x1, 46, 16, stage.ground, "#1c1c1c");
@@ -1083,7 +1098,7 @@
         ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(g.x1 + 4, g.y + 1); ctx.lineTo(g.x2 - 4, g.y + 1); ctx.stroke();
       });
-
+ 
       ctx.save();
       ctx.setLineDash([10, 8]);
       ctx.strokeStyle = "rgba(230,60,60,0.25)";
@@ -1091,12 +1106,12 @@
       const b = stage.blast;
       ctx.strokeRect(b.l + 8, b.t + 8, b.r - b.l - 16, b.b - b.t - 16);
       ctx.restore();
-
+ 
       stage.platforms.forEach((pl) => {
         this.roundRectSketch(ctx, pl.x1, pl.y, pl.x2 - pl.x1, 16, 8, stage.plat, "#1c1c1c");
       });
     }
-
+ 
     roundRectSketch(ctx, x, y, w, h, r, fill, stroke) {
       ctx.beginPath();
       ctx.moveTo(x + r, y);
@@ -1111,7 +1126,7 @@
       ctx.strokeStyle = stroke;
       ctx.stroke();
     }
-
+ 
     drawShadow(ctx, p) {
       const groundY = this.stage.groundY;
       const s = p.charDef.scaleMul;
@@ -1124,22 +1139,22 @@
       ctx.fill();
       ctx.restore();
     }
-
+ 
     drawPlayer(ctx, p) {
       const key = `${p.action}_${p.frameIndex}`;
       const img = IMAGES[key];
       if (!img || !img.complete || !img.naturalWidth) return;
-
+ 
       ctx.save();
       if (p.invul > 0 && Math.floor(p.invul * 14) % 2 === 0) {
         ctx.globalAlpha = 0.35;
       }
-
+ 
       ctx.translate(p.x, p.y);
       ctx.scale(p.facing * p.squash, 1 / Math.max(p.squash, 0.7) * 1);
-
+ 
       ctx.filter = `drop-shadow(0 0 3px ${p.color}) drop-shadow(0 0 7px ${p.color}55)`;
-
+ 
       // Scale off the character's own idle-pose reference height, not this
       // frame's own naturalHeight — so an action with a taller canvas (extra
       // headroom for a big swing/spin) doesn't visually resize the character.
@@ -1149,7 +1164,7 @@
       ctx.drawImage(img, -dW / 2, -dHgt, dW, dHgt);
       ctx.restore();
     }
-
+ 
     drawChargeGlow(ctx, p) {
       if (!p.charging) return;
       const frac = clamp(p.charging.t / LASER_MAX_CHARGE, 0, 1);
@@ -1166,7 +1181,7 @@
       ctx.beginPath(); ctx.arc(p.x, headY, rad, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
-
+ 
     drawProjectiles(ctx) {
       this.projectiles.forEach((pr) => {
         const pulse = 1 + Math.sin(pr.t * 30) * 0.08;
@@ -1182,7 +1197,7 @@
         ctx.restore();
       });
     }
-
+ 
     drawLaserFlash(ctx) {
       const f = this.laserFlash;
       if (!f) return;
@@ -1200,7 +1215,7 @@
       ctx.stroke();
       ctx.restore();
     }
-
+ 
     drawParticles(ctx) {
       this.particles.forEach((pt) => {
         const a = 1 - pt.t / pt.life;
@@ -1213,7 +1228,7 @@
         ctx.restore();
       });
     }
-
+ 
     drawHUD(ctx) {
       this.players.forEach((p, i) => {
         const x = i === 0 ? 30 : CW - 176;
@@ -1223,14 +1238,14 @@
         ctx.font = "bold 15px Kalam, sans-serif";
         ctx.fillStyle = p.color;
         ctx.fillText(`${p.label} · ${p.charDef.name}`, x, y);
-
+ 
         for (let s = 0; s < STOCK_COUNT; s++) {
           ctx.beginPath();
           ctx.arc(x + 4 + s * 16, y + 16, 5, 0, Math.PI * 2);
           ctx.fillStyle = s < p.stocks ? p.color : "rgba(0,0,0,0.15)";
           ctx.fill();
         }
-
+ 
         const pct = Math.round(p.damage);
         let dmgColor = "#2ecc71";
         if (pct > 100) dmgColor = "#e74c3c";
@@ -1244,7 +1259,7 @@
         ctx.restore();
       });
     }
-
+ 
     drawCountdown(ctx) {
       ctx.save();
       ctx.textAlign = "center";
@@ -1264,7 +1279,7 @@
       ctx.restore();
     }
   }
-
+ 
   // ---------------------------------------------------------------------
   // Select-screen thumbnails
   // ---------------------------------------------------------------------
@@ -1283,7 +1298,7 @@
     ctx.drawImage(img, -dW / 2, -targetH, dW, targetH);
     ctx.restore();
   }
-
+ 
   function renderStageThumb(canvas, stage) {
     const ctx = canvas.getContext("2d");
     const W = canvas.width, H = canvas.height;
@@ -1295,7 +1310,7 @@
     g.addColorStop(1, stage.sky[2]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
-
+ 
     if (stage.stars) {
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.85)";
@@ -1306,7 +1321,7 @@
       }
       ctx.restore();
     }
-
+ 
     const gY = stage.groundY * k;
     stage.grounds.forEach((gseg) => {
       ctx.fillStyle = stage.ground;
@@ -1318,7 +1333,7 @@
       ctx.lineWidth = 1.5;
       ctx.strokeRect(gseg.x1 * k, gseg.y * k, (gseg.x2 - gseg.x1) * k, gh);
     });
-
+ 
     stage.platforms.forEach((pl) => {
       ctx.fillStyle = stage.plat;
       const pw = (pl.x2 - pl.x1) * k, ph = Math.max(2, 8 * k);
@@ -1328,7 +1343,7 @@
       ctx.strokeRect(pl.x1 * k, pl.y * k, pw, ph);
     });
   }
-
+ 
   // ---------------------------------------------------------------------
   // Boot
   // ---------------------------------------------------------------------
@@ -1338,9 +1353,9 @@
     const loadingFill = document.getElementById("loading-fill");
     const loadingWrap = document.getElementById("loading-wrap");
     const modeRow = document.getElementById("mode-row");
-
+ 
     let game = null;
-
+ 
     function buildCharGrid(containerId, onPick) {
       const el = document.getElementById(containerId);
       el.innerHTML = "";
@@ -1365,7 +1380,7 @@
         renderCharThumb(canvas, c);
       });
     }
-
+ 
     function buildStageGrid() {
       const el = document.getElementById("stage-grid");
       el.innerHTML = "";
@@ -1389,7 +1404,7 @@
         renderStageThumb(canvas, s);
       });
     }
-
+ 
     loadAllSprites((frac) => {
       if (loadingFill) loadingFill.style.width = `${Math.round(frac * 100)}%`;
     }).then(() => {
@@ -1397,13 +1412,13 @@
       if (modeRow) modeRow.classList.remove("hidden");
       game = new Game(canvas);
       window.__stickSmashGame = game;
-
+ 
       buildCharGrid("p1-char-grid", (i) => { game.pick.p1 = i; game.refreshCharSelection(); });
       buildCharGrid("p2-char-grid", (i) => { game.pick.p2 = i; game.refreshCharSelection(); });
       buildStageGrid();
       game.refreshCharSelection();
       game.refreshStageSelection();
-
+ 
       document.querySelectorAll(".mode-btn[data-mode]").forEach((btn) => {
         btn.addEventListener("click", () => {
           ensureAudio();
