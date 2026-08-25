@@ -1,4 +1,3 @@
-
 /* StickSmash — a Smash-Bros-style local stick-figure fighter
  * Built from hand-drawn stick-figure sprite sheets (walk / run / jump / punch / kick /
  * fireball / spinning uppercut). Single source of game logic; works both as a plain
@@ -31,7 +30,7 @@
   const RESPAWN_INVUL = 1.6;
   const LASER_MAX_CHARGE = 2.0;
  
-  const ACTIONS = ["run", "jump", "kick", "walk", "punch", "fireball", "spin", "swordwalk", "slice", "airslice", "tornado"];
+  const ACTIONS = ["run", "jump", "kick", "walk", "punch", "fireball", "spin", "swordwalk", "slice", "airslice", "tornado", "bigarmwalk", "bigarmpunch", "bigarmjump"];
   const FRAME_COUNT = 5;
  
   const MOVES = {
@@ -130,11 +129,49 @@
       cooldown: 1.3,
       sfx: "tornado",
     },
+    bigpunch: {
+      // One giant, heavily-telegraphed haymaker — big damage, big knockback,
+      // big hitbox, slower cooldown than a normal punch to balance it out.
+      frames: ["bigarmpunch_2", "bigarmpunch_3", "bigarmpunch_4"],
+      durs: [0.10, 0.17, 0.16],
+      activeFrame: 1,
+      damage: 20,
+      baseKB: 400,
+      scaleKB: 6.2,
+      angleDeg: 30,
+      hitboxW: 100, hitboxH: 80, hitboxYOff: -145,
+      cooldown: 0.5,
+      sfx: "bigpunch",
+    },
   };
  
   const KEYMAPS = {
     p1: { left: "KeyA", right: "KeyD", up: "KeyW", down: "KeyS", punch: "KeyF", kick: "KeyG", fireball: "KeyR", uppercut: "KeyT", laser: "KeyY" },
     p2: { left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown", punch: "KeyK", kick: "KeyL", fireball: "KeyI", uppercut: "KeyO", laser: "KeyP" },
+  };
+ 
+  // ---------------------------------------------------------------------
+  // CPU difficulty — scales reaction time, how often it goes for its
+  // ranged/heavy option, how often it presses an attack at close range at
+  // all vs. hesitating, how reliably it recovers, and how often it just
+  // "spaces out" and does nothing for a beat (simulates a worse player).
+  // ---------------------------------------------------------------------
+  const DIFFICULTIES = {
+    easy: { label: "Easy", reactionMin: 0.22, reactionMax: 0.42, mistakeChance: 0.32, specialChance: 0.12, closeAggression: 0.45, recoveryChance: 0.45 },
+    normal: { label: "Normal", reactionMin: 0.08, reactionMax: 0.16, mistakeChance: 0.10, specialChance: 0.22, closeAggression: 0.72, recoveryChance: 0.85 },
+    hard: { label: "Hard", reactionMin: 0.03, reactionMax: 0.07, mistakeChance: 0.02, specialChance: 0.34, closeAggression: 0.92, recoveryChance: 1.0 },
+  };
+ 
+  // ---------------------------------------------------------------------
+  // Sandbox mode — lets the player crank individual attacks' damage (and a
+  // fighter's overall size) up or down before a match, per player. Each
+  // character's real move keys are listed in its own `sandboxMoves` field
+  // (see CHARACTERS below); this map is just the display label per key.
+  // ---------------------------------------------------------------------
+  const MOVE_LABELS = {
+    punch: "Punch", kick: "Kick", fireball: "Fireball", uppercut: "Spin Uppercut",
+    laser: "Laser", slice: "Slice", airslice: "Air Slice", tornado: "Sword Tornado",
+    bigpunch: "Big Punch",
   };
  
   // ---------------------------------------------------------------------
@@ -153,6 +190,10 @@
       // for the sword) doesn't make the character balloon in size on screen.
       refHeight: 250,
       moveMap: { punch: "punch", kick: "kick", fireball: "fireball", uppercut: "uppercut", laser: "laser" },
+      // Real move keys this character actually uses — drives the sandbox
+      // tuning screen's per-character slider list (moveMap can hold resolver
+      // functions, which can't be statically enumerated, so this is explicit).
+      sandboxMoves: ["punch", "kick", "fireball", "uppercut", "laser"],
     },
     {
       id: "lance", name: "Lance", color: "#2ea8a8",
@@ -167,6 +208,22 @@
         uppercut: null,
         laser: null,
       },
+      sandboxMoves: ["slice", "airslice", "tornado"],
+    },
+    {
+      id: "bigarm", name: "Mr. Big Arm", color: "#c23b2e",
+      blurb: "A bruiser with one gigantic arm — his punch hits like a truck. No frills, no combos, just one devastating haymaker.",
+      speedMul: 0.92, jumpMul: 1, scaleMul: 1.05, kbTakenMul: 0.92, powerMul: 1,
+      idleAction: "bigarmpunch", walkAction: "bigarmwalk", runAction: "bigarmwalk", jumpAction: "bigarmjump",
+      refHeight: 240,
+      moveMap: {
+        punch: "bigpunch",
+        kick: null,
+        fireball: null,
+        uppercut: null,
+        laser: null,
+      },
+      sandboxMoves: ["bigpunch"],
     },
   ];
  
@@ -217,6 +274,48 @@
       blast: { l: -160, r: 1120, t: -380, b: 660 },
       sky: ["#141a33", "#232a52", "#3a3465"], ground: "#232030", grass: "#4fd1ff", plat: "#4fd1ff", cloud: "rgba(255,255,255,0.9)",
       stars: true,
+    },
+    // Themed stages below aren't just re-tinted platform arenas — each has a
+    // background `decor` array (house/mountain/tower silhouettes, drawn by
+    // drawDecorShape) layered behind the ground/platforms so it actually
+    // reads as a village, a mountain, or a castle.
+    {
+      id: "village", name: "Village Square",
+      grounds: [{ x1: 60, x2: 900, y: 460 }],
+      platforms: [{ x1: 250, x2: 400, y: 300 }, { x1: 560, x2: 710, y: 300 }],
+      groundY: 460, stageL: 60, stageR: 900,
+      blast: { l: -160, r: 1120, t: -320, b: 660 },
+      sky: ["#bfe0ff", "#e2f2ff", "#fff6e0"], ground: "#a9906b", grass: "#d9c48a", plat: "#c98a52", cloud: "rgba(255,255,255,0.8)",
+      decor: [
+        { type: "house", x: 150, baseY: 460, scale: 1.3, wallColor: "#e0c396", roofColor: "#a4503a" },
+        { type: "house", x: 480, baseY: 460, scale: 0.9, wallColor: "#e8d2a6", roofColor: "#b25a3a" },
+        { type: "house", x: 810, baseY: 460, scale: 1.15, wallColor: "#d9b88a", roofColor: "#8a3f2c" },
+      ],
+    },
+    {
+      id: "mountain", name: "Misty Mountain",
+      grounds: [{ x1: 340, x2: 620, y: 460 }],
+      platforms: [{ x1: 140, x2: 280, y: 340 }, { x1: 680, x2: 820, y: 340 }, { x1: 420, x2: 540, y: 190 }],
+      groundY: 460, stageL: 340, stageR: 620,
+      blast: { l: -140, r: 1100, t: -340, b: 660 },
+      sky: ["#9fb4c9", "#c7d8e6", "#eef4f6"], ground: "#6b7280", grass: "#8a97a3", plat: "#7c8fa6", cloud: "rgba(255,255,255,0.55)",
+      decor: [
+        { type: "mountain", x: 160, baseY: 460, width: 340, height: 260, color: "#7c8fa6" },
+        { type: "mountain", x: 480, baseY: 460, width: 260, height: 200, color: "#8a97a8" },
+        { type: "mountain", x: 800, baseY: 460, width: 320, height: 240, color: "#6f7f92" },
+      ],
+    },
+    {
+      id: "castle", name: "Castle Courtyard",
+      grounds: [{ x1: 120, x2: 840, y: 460 }],
+      platforms: [{ x1: 300, x2: 440, y: 310 }, { x1: 520, x2: 660, y: 310 }],
+      groundY: 460, stageL: 120, stageR: 840,
+      blast: { l: -160, r: 1120, t: -340, b: 660 },
+      sky: ["#40395a", "#5c4f74", "#8a6f8a"], ground: "#59545e", grass: "#847d8a", plat: "#8f8a86", cloud: "rgba(220,210,230,0.4)",
+      decor: [
+        { type: "tower", x: 90, baseY: 460, width: 110, height: 260, color: "#78727a" },
+        { type: "tower", x: 870, baseY: 460, width: 110, height: 260, color: "#726c76" },
+      ],
     },
   ];
  
@@ -311,6 +410,7 @@
     fireball: () => { beep(220, 0.12, "sawtooth", 0.2, 480); noiseBurst(0.07, 0.15); },
     uppercut: () => { beep(300, 0.18, "square", 0.2, 760); },
     slice: () => { beep(260, 0.09, "sawtooth", 0.2, 140); noiseBurst(0.05, 0.16); },
+    bigpunch: () => { beep(90, 0.22, "square", 0.28, 45); noiseBurst(0.14, 0.28); },
     tornado: () => { beep(200, 0.22, "sawtooth", 0.22, 90); noiseBurst(0.14, 0.22); },
     laser: (frac) => { beep(300 + frac * 500, 0.16 + frac * 0.14, "sawtooth", 0.24, 950 + frac * 650); noiseBurst(0.06, 0.14); },
     land: () => beep(90, 0.07, "square", 0.1, 60),
@@ -404,7 +504,14 @@
       this.ctx = canvas.getContext("2d");
       this.keys = new Set();
       this.mode = "2p"; // '2p' | 'cpu'
-      this.state = "menu"; // menu | charselect | stageselect | countdown | playing | gameover
+      this.difficulty = "normal"; // easy | normal | hard — CPU opponent only
+      this.sandboxEnabled = false;
+      // Per-player tuning: { p1: { size, moves: { moveKey: multiplier } }, p2: {...} }.
+      // "size" scales that player's on-screen/hitbox size (1 = normal); a
+      // missing move key = 1x damage. Kept per-player so "make P1 stronger"
+      // and "make P2 bigger" don't have to affect both fighters at once.
+      this.sandbox = { p1: { size: 1, moves: {} }, p2: { size: 1, moves: {} } };
+      this.state = "menu"; // menu | charselect | stageselect | sandbox | countdown | playing | gameover
       this.countdownT = 0;
       this.shake = 0;
       this.particles = [];
@@ -433,12 +540,13 @@
     onConfirm() {
       if (this.state === "menu") this.goCharSelect();
       else if (this.state === "charselect") this.goStageSelect();
-      else if (this.state === "stageselect") this.startMatch();
+      else if (this.state === "stageselect") this.goFightOrSandbox();
+      else if (this.state === "sandbox") this.startMatch();
       else if (this.state === "gameover") this.startMatch();
     }
  
     showScreen(id) {
-      ["menu-screen", "charselect-screen", "stageselect-screen", "gameover-screen"].forEach((sid) => {
+      ["menu-screen", "charselect-screen", "stageselect-screen", "sandbox-screen", "gameover-screen"].forEach((sid) => {
         document.getElementById(sid).classList.toggle("hidden", sid !== id);
       });
     }
@@ -451,6 +559,51 @@
     setMode(mode) {
       this.mode = mode;
       document.querySelectorAll(".mode-btn[data-mode]").forEach((b) => b.classList.toggle("selected", b.dataset.mode === mode));
+      const diffRow = document.getElementById("difficulty-row");
+      if (diffRow) diffRow.classList.toggle("hidden", mode !== "cpu");
+    }
+ 
+    setDifficulty(key) {
+      if (!DIFFICULTIES[key]) return;
+      this.difficulty = key;
+      document.querySelectorAll(".diff-btn[data-difficulty]").forEach((b) => b.classList.toggle("selected", b.dataset.difficulty === key));
+    }
+ 
+    setSandboxEnabled(on) {
+      this.sandboxEnabled = !!on;
+    }
+ 
+    // After stage select: hop into the sandbox tuning screen if the player
+    // opted in, otherwise go straight to the fight as before.
+    goFightOrSandbox() {
+      if (this.sandboxEnabled) this.goSandbox();
+      else this.startMatch();
+    }
+ 
+    goSandbox() {
+      ensureAudio();
+      SFX.select();
+      this.state = "sandbox";
+      // Rebuild the tuning grid fresh each time — it reflects whichever
+      // fighters were just picked on the char-select screen.
+      if (typeof this.buildSandboxGrid === "function") this.buildSandboxGrid();
+      this.showScreen("sandbox-screen");
+    }
+ 
+    // Damage multiplier for a given move key, for a specific player slot
+    // ("p1"/"p2"). Always 1x (no-op) unless sandbox mode is on and that
+    // player's slider for that move was changed.
+    sandboxMul(playerId, key) {
+      if (!this.sandboxEnabled) return 1;
+      const slot = this.sandbox[playerId];
+      return (slot && slot.moves[key]) || 1;
+    }
+ 
+    // Size multiplier for a specific player slot — "make yourself bigger."
+    sandboxSizeMul(playerId) {
+      if (!this.sandboxEnabled) return 1;
+      const slot = this.sandbox[playerId];
+      return (slot && slot.size) || 1;
     }
  
     goCharSelect() {
@@ -498,10 +651,19 @@
       const char1 = CHARACTERS[this.pick.p1] || CHARACTERS[0];
       const char2 = CHARACTERS[this.pick.p2] || CHARACTERS[0];
  
-      const p1 = new Player("p1", char1, spawn1, KEYMAPS.p1, false, "P1", "#2f6fed");
+      // Sandbox "size" tuning: clone the charDef with a scaled-up/down
+      // scaleMul rather than mutating the shared CHARACTERS entry, so every
+      // existing scale-dependent code path (hurtbox, hitboxes, rendering,
+      // shadow) picks it up automatically via p.charDef.scaleMul.
+      const size1 = this.sandboxSizeMul("p1");
+      const size2 = this.sandboxSizeMul("p2");
+      const char1Def = size1 !== 1 ? { ...char1, scaleMul: char1.scaleMul * size1 } : char1;
+      const char2Def = size2 !== 1 ? { ...char2, scaleMul: char2.scaleMul * size2 } : char2;
+ 
+      const p1 = new Player("p1", char1Def, spawn1, KEYMAPS.p1, false, "P1", "#2f6fed");
       const p2Label = this.mode === "cpu" ? "CPU" : "P2";
       const p2Color = this.mode === "cpu" ? "#9b3fe6" : "#e6522c";
-      const p2 = new Player("p2", char2, spawn2, KEYMAPS.p2, this.mode === "cpu", p2Label, p2Color);
+      const p2 = new Player("p2", char2Def, spawn2, KEYMAPS.p2, this.mode === "cpu", p2Label, p2Color);
       p1.y = this.stage.groundY;
       p2.y = this.stage.groundY;
       this.players = [p1, p2];
@@ -546,13 +708,18 @@
     // Simple CPU brain
     // -------------------------------------------------------------
     updateCPU(cpu, foe, dt) {
+      const diff = DIFFICULTIES[this.difficulty] || DIFFICULTIES.normal;
       cpu.aiTimer -= dt;
       const input = cpu.aiInput;
       if (cpu.aiTimer <= 0) {
-        cpu.aiTimer = rand(0.08, 0.16);
+        cpu.aiTimer = rand(diff.reactionMin, diff.reactionMax);
         const dx = foe.x - cpu.x;
         const dist = Math.abs(dx);
         input.left = input.right = input.up = input.down = input.punch = input.kick = input.fireball = input.uppercut = false;
+ 
+        // Lower difficulties occasionally "space out" for a beat instead of
+        // reacting at all — simulates a worse player, not just a slower one.
+        if (Math.random() < diff.mistakeChance) return;
  
         const stageL = this.stage.stageL, stageR = this.stage.stageR;
         const nearLeftEdge = cpu.x < stageL + 50 && cpu.grounded;
@@ -567,7 +734,7 @@
         const cd = (key) => cpu.cooldowns[key] || 0;
  
         if (!cpu.isBusy) {
-          if (isRangedFireball && dist > 220 && cd("fireball") <= 0 && Math.random() < 0.22) {
+          if (isRangedFireball && dist > 220 && cd("fireball") <= 0 && Math.random() < diff.specialChance) {
             input.fireball = true;
             if (dx < 0) cpu.facing = -1; else cpu.facing = 1;
           } else if (dist > 68) {
@@ -575,18 +742,22 @@
             else if (dx > 0 && !nearRightEdge) input.right = true;
             else if (nearLeftEdge) input.right = true;
             else if (nearRightEdge) input.left = true;
-          } else {
+          } else if (Math.random() < diff.closeAggression) {
             const roll = Math.random();
             if (heavyCloseMove && roll < 0.18 && cd(heavyCloseMove) <= 0) input.fireball = true;
             else if (roll < 0.55) input.kick = true;
             else if (roll < 0.9) input.punch = true;
             else if (hasUppercut && cd("uppercut") <= 0) input.uppercut = true;
           }
+          // else: hesitates at close range and does nothing this beat — lower
+          // difficulties do this far more often (low closeAggression).
           if ((foe.y < cpu.y - 70 && dist < 260 && Math.random() < 0.5) || Math.random() < 0.01) {
             input.up = true;
           }
-          // recovery: if fallen off, move back & jump/uppercut toward stage center
-          if (!cpu.grounded && (cpu.x < stageL || cpu.x > stageR) && cpu.y > 250) {
+          // recovery: if fallen off, move back & jump/uppercut toward stage
+          // center — recoveryChance lets easier difficulties botch this and
+          // fall to their death more often, like a less careful player would.
+          if (!cpu.grounded && (cpu.x < stageL || cpu.x > stageR) && cpu.y > 250 && Math.random() < diff.recoveryChance) {
             input.left = cpu.x > CW / 2;
             input.right = cpu.x <= CW / 2;
             if (hasUppercut && cd("uppercut") <= 0) input.uppercut = true;
@@ -799,20 +970,20 @@
           if (move.aoe) hb.x = p.x - w / 2;
           else hb.x = p.facing > 0 ? p.x + 6 : p.x - 6 - w;
           if (rectsOverlap(hb, foe.hurtbox()) && foe.invul <= 0 && !foe.dead) {
-            this.dealHit(p, foe, move.tickDamage * p.charDef.powerMul, move.tickBaseKB, move.tickScaleKB, move.angleDeg);
+            this.dealHit(p, foe, move.tickDamage * p.charDef.powerMul * this.sandboxMul(p.id, a.key), move.tickBaseKB, move.tickScaleKB, move.angleDeg);
           }
         }
       } else if (a.stepIndex === move.activeFrame && !a.hasHit) {
         // active hit frame check
         a.hasHit = true;
         if (move.isProjectile) {
-          this.spawnProjectile(p, move);
+          this.spawnProjectile(p, move, a.key);
         } else {
           const hb = { x: 0, y: p.y + move.hitboxYOff * p.charDef.scaleMul, w: move.hitboxW * p.charDef.scaleMul, h: move.hitboxH * p.charDef.scaleMul };
           if (p.facing > 0) hb.x = p.x + 6;
           else hb.x = p.x - 6 - hb.w;
           if (rectsOverlap(hb, foe.hurtbox()) && foe.invul <= 0 && !foe.dead) {
-            this.applyHit(p, foe, move);
+            this.applyHit(p, foe, move, a.key);
           }
         }
       }
@@ -848,11 +1019,11 @@
       this.spawnHitSpark(target.x - dirX * 20, target.y - 120, attacker.color);
     }
  
-    applyHit(attacker, target, move) {
-      this.dealHit(attacker, target, move.damage * attacker.charDef.powerMul, move.baseKB, move.scaleKB, move.angleDeg);
+    applyHit(attacker, target, move, moveKey) {
+      this.dealHit(attacker, target, move.damage * attacker.charDef.powerMul * this.sandboxMul(attacker.id, moveKey), move.baseKB, move.scaleKB, move.angleDeg);
     }
  
-    spawnProjectile(p, move) {
+    spawnProjectile(p, move, moveKey) {
       this.projectiles.push({
         x: p.x + p.facing * 26,
         y: p.y - 140 * p.charDef.scaleMul,
@@ -860,6 +1031,7 @@
         dir: p.facing,
         owner: p,
         move,
+        moveKey,
         life: move.projLife,
         t: 0,
         r: 15,
@@ -880,7 +1052,7 @@
         if (target && !target.dead && target.invul <= 0) {
           const box = { x: pr.x - pr.r, y: pr.y - pr.r, w: pr.r * 2, h: pr.r * 2 };
           if (rectsOverlap(box, target.hurtbox())) {
-            this.dealHit(pr.owner, target, pr.move.damage * pr.owner.charDef.powerMul, pr.move.baseKB, pr.move.scaleKB, pr.move.angleDeg);
+            this.dealHit(pr.owner, target, pr.move.damage * pr.owner.charDef.powerMul * this.sandboxMul(pr.owner.id, pr.moveKey), pr.move.baseKB, pr.move.scaleKB, pr.move.angleDeg);
             pr.dead = true;
           }
         }
@@ -903,7 +1075,7 @@
       if (!foe.dead && foe.invul <= 0) {
         const beamRect = { x: bx1, y: headY - beamHalfH, w: bx2 - bx1, h: beamHalfH * 2 };
         if (rectsOverlap(beamRect, foe.hurtbox())) {
-          this.dealHit(p, foe, damage * p.charDef.powerMul, baseKB, 4.0, 18);
+          this.dealHit(p, foe, damage * p.charDef.powerMul * this.sandboxMul(p.id, "laser"), baseKB, 4.0, 18);
         }
       }
  
@@ -1079,6 +1251,10 @@
           ctx.arc(x - r * 0.8, y + 10, r * 0.6, 0, Math.PI * 2);
           ctx.fill();
         });
+      }
+ 
+      if (stage.decor) {
+        stage.decor.forEach((shape) => drawDecorShape(ctx, shape, 1));
       }
  
       ctx.strokeStyle = "rgba(28,28,28,0.08)";
@@ -1299,6 +1475,70 @@
     ctx.restore();
   }
  
+  // ---------------------------------------------------------------------
+  // Background decor — simple silhouette shapes (house/mountain/castle
+  // tower) that give a themed stage its identity beyond "floating
+  // platforms." Shared between the full-size render (k=1) and the
+  // stage-select thumbnail (k = thumbnail scale), so both stay in sync.
+  // Coordinates are in the 960x540 stage space; baseY is the shape's foot.
+  // ---------------------------------------------------------------------
+  function drawDecorShape(ctx, shape, k) {
+    const x = shape.x * k, baseY = shape.baseY * k, s = (shape.scale || 1) * k;
+    ctx.save();
+    ctx.lineWidth = Math.max(1, 2 * k);
+    ctx.strokeStyle = "#1c1c1c";
+    if (shape.type === "house") {
+      const w = 70 * s, h = 54 * s, roofH = 34 * s;
+      ctx.fillStyle = shape.wallColor || "#d9b88a";
+      ctx.fillRect(x - w / 2, baseY - h, w, h);
+      ctx.strokeRect(x - w / 2, baseY - h, w, h);
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2 - 8 * s, baseY - h);
+      ctx.lineTo(x, baseY - h - roofH);
+      ctx.lineTo(x + w / 2 + 8 * s, baseY - h);
+      ctx.closePath();
+      ctx.fillStyle = shape.roofColor || "#a4503a";
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#5a3a26";
+      ctx.fillRect(x - 8 * s, baseY - 22 * s, 16 * s, 22 * s);
+      ctx.fillStyle = "#bfe3ff";
+      ctx.fillRect(x - w / 2 + 10 * s, baseY - h + 12 * s, 14 * s, 14 * s);
+      ctx.strokeRect(x - w / 2 + 10 * s, baseY - h + 12 * s, 14 * s, 14 * s);
+    } else if (shape.type === "mountain") {
+      const w = (shape.width || 220) * s, h = (shape.height || 170) * s;
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2, baseY);
+      ctx.lineTo(x - w * 0.08, baseY - h);
+      ctx.lineTo(x + w * 0.12, baseY - h * 0.72);
+      ctx.lineTo(x + w / 2, baseY);
+      ctx.closePath();
+      ctx.fillStyle = shape.color || "#7c8fa6";
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - w * 0.08 - w * 0.09, baseY - h * 0.76);
+      ctx.lineTo(x - w * 0.08, baseY - h);
+      ctx.lineTo(x - w * 0.08 + w * 0.09, baseY - h * 0.78);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fill();
+    } else if (shape.type === "tower") {
+      const w = (shape.width || 90) * s, h = (shape.height || 150) * s;
+      ctx.fillStyle = shape.color || "#8f8a86";
+      ctx.fillRect(x - w / 2, baseY - h, w, h);
+      ctx.strokeRect(x - w / 2, baseY - h, w, h);
+      const crenW = w / 5;
+      for (let i = 0; i < 5; i += 2) {
+        ctx.fillRect(x - w / 2 + i * crenW, baseY - h - 10 * s, crenW, 10 * s);
+        ctx.strokeRect(x - w / 2 + i * crenW, baseY - h - 10 * s, crenW, 10 * s);
+      }
+      ctx.fillStyle = "#2a2a2a";
+      ctx.fillRect(x - 6 * s, baseY - h * 0.55, 12 * s, 16 * s);
+    }
+    ctx.restore();
+  }
+ 
   function renderStageThumb(canvas, stage) {
     const ctx = canvas.getContext("2d");
     const W = canvas.width, H = canvas.height;
@@ -1320,6 +1560,10 @@
         ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
+    }
+ 
+    if (stage.decor) {
+      stage.decor.forEach((shape) => drawDecorShape(ctx, shape, k));
     }
  
     const gY = stage.groundY * k;
@@ -1405,6 +1649,72 @@
       });
     }
  
+    // One slider row, shared by the "size" control and every per-move
+    // damage control — just differ in range/step and what they write to.
+    function buildSandboxSlider(labelText, initVal, min, max, step, isSize, onChange) {
+      const row = document.createElement("div");
+      row.className = "sandbox-row" + (isSize ? " sandbox-size-row" : "");
+      const name = document.createElement("span");
+      name.className = "sandbox-name";
+      name.textContent = labelText;
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = String(min);
+      slider.max = String(max);
+      slider.step = String(step);
+      slider.value = String(initVal);
+      const val = document.createElement("span");
+      val.className = "sandbox-val";
+      val.textContent = `${slider.value}×`;
+      slider.addEventListener("input", () => {
+        const v = parseFloat(slider.value);
+        onChange(v);
+        val.textContent = `${slider.value}×`;
+      });
+      row.append(name, slider, val);
+      return row;
+    }
+ 
+    // Two columns — one per player slot — each with a "make yourself
+    // bigger/smaller" size slider plus one damage slider per move that
+    // player's currently-picked fighter actually has. Rebuilt fresh every
+    // time the sandbox screen is entered so it reflects the latest char picks.
+    function buildSandboxGrid() {
+      const el = document.getElementById("sandbox-grid");
+      if (!el) return;
+      el.innerHTML = "";
+      ["p1", "p2"].forEach((pid) => {
+        const charDef = CHARACTERS[game.pick[pid]] || CHARACTERS[0];
+        if (!game.sandbox[pid]) game.sandbox[pid] = { size: 1, moves: {} };
+        const slot = game.sandbox[pid];
+ 
+        const col = document.createElement("div");
+        col.className = "sandbox-col";
+ 
+        const isCpu = pid === "p2" && game.mode === "cpu";
+        const label = pid === "p1" ? "Player 1" : (isCpu ? "CPU" : "Player 2");
+        const labelColor = pid === "p1" ? "#2f6fed" : (isCpu ? "#9b3fe6" : "#e6522c");
+ 
+        const heading = document.createElement("h3");
+        heading.className = "sandbox-col-heading";
+        heading.style.color = labelColor;
+        heading.textContent = `${label} · ${charDef.name}`;
+        col.appendChild(heading);
+ 
+        col.appendChild(buildSandboxSlider("📏 Size", slot.size || 1, 0.5, 2, 0.1, true, (v) => {
+          slot.size = v;
+        }));
+ 
+        (charDef.sandboxMoves || []).forEach((key) => {
+          col.appendChild(buildSandboxSlider(MOVE_LABELS[key] || key, slot.moves[key] || 1, 0.25, 3, 0.25, false, (v) => {
+            slot.moves[key] = v;
+          }));
+        });
+ 
+        el.appendChild(col);
+      });
+    }
+ 
     loadAllSprites((frac) => {
       if (loadingFill) loadingFill.style.width = `${Math.round(frac * 100)}%`;
     }).then(() => {
@@ -1416,6 +1726,8 @@
       buildCharGrid("p1-char-grid", (i) => { game.pick.p1 = i; game.refreshCharSelection(); });
       buildCharGrid("p2-char-grid", (i) => { game.pick.p2 = i; game.refreshCharSelection(); });
       buildStageGrid();
+      game.buildSandboxGrid = buildSandboxGrid;
+      buildSandboxGrid();
       game.refreshCharSelection();
       game.refreshStageSelection();
  
@@ -1425,14 +1737,32 @@
           game.setMode(btn.dataset.mode);
         });
       });
+      document.querySelectorAll(".diff-btn[data-difficulty]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          ensureAudio(); SFX.select();
+          game.setDifficulty(btn.dataset.difficulty);
+        });
+      });
+      document.getElementById("sandbox-toggle").addEventListener("change", (e) => {
+        game.setSandboxEnabled(e.target.checked);
+      });
+      document.getElementById("sandbox-reset-btn").addEventListener("click", () => {
+        ensureAudio(); SFX.select();
+        game.sandbox = { p1: { size: 1, moves: {} }, p2: { size: 1, moves: {} } };
+        buildSandboxGrid();
+      });
       document.getElementById("start-btn").addEventListener("click", () => game.goCharSelect());
       document.getElementById("charselect-back-btn").addEventListener("click", () => game.toMenu());
       document.getElementById("charselect-next-btn").addEventListener("click", () => game.goStageSelect());
       document.getElementById("stageselect-back-btn").addEventListener("click", () => game.goCharSelect());
-      document.getElementById("stageselect-fight-btn").addEventListener("click", () => game.startMatch());
+      document.getElementById("stageselect-fight-btn").addEventListener("click", () => game.goFightOrSandbox());
+      document.getElementById("sandbox-back-btn").addEventListener("click", () => game.goStageSelect());
+      document.getElementById("sandbox-fight-btn").addEventListener("click", () => game.startMatch());
       document.getElementById("rematch-btn").addEventListener("click", () => game.startMatch());
       document.getElementById("menu-btn").addEventListener("click", () => game.toMenu());
       game.setMode("2p");
+      game.setDifficulty("normal");
     });
   });
 })();
+ 
