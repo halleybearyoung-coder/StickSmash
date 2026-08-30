@@ -13,7 +13,7 @@ python3 -m http.server 8000
 # then visit http://localhost:8000
 ```
 
-It's also set up for GitHub Pages — enable Pages on this repo (Settings → Pages → Deploy from branch → `main` / root) and it'll be playable at `https://<your-username>.github.io/StickSmash/`.
+It's also set up for GitHub Pages — enable Pages on this repo (Settings → Pages → Deploy from branch → `main` / root) and it'll be playable at `https://asteroid.works/StickSmash/`.
 
 ## Controls
 
